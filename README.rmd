@@ -1,0 +1,78 @@
+---
+title: "Word Association in the Scriptures"
+author: "Kit Applegate"
+date: "2023-06-25"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidytext)
+library(widyr)
+library(igraph)
+library(ggraph)
+library(scriptuRs)
+library(tm)
+
+lds_scriptures <- lds_scriptures()
+
+kingJamesStopwords <- c("and", "thee", "thou", "ye", "art", "hast", "didst", "shalt", "hath", "thine", "thy", "yea", "saith", "pass", "behold")
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+book.Text <- lds_scriptures %>%
+  select(volume_title,book_long_title, text)
+  
+book.Words <- book.Text %>%
+  unnest_tokens(output = word, input = text) %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(str_detect(word, "[:alpha:]"))
+
+book.Words <- book.Words %>%
+  filter(!word %in% kingJamesStopwords)
+
+```
+
+```{r}
+book.Words %>%
+  group_by(book_long_title) %>%
+  summarise(Total.Words = n()) %>%
+  arrange(desc(Total.Words))
+```
+
+```{r}
+
+book.Words.mentioned <- book.Words %>%
+  count(word, name = "book_long_title") %>%
+  filter(book_long_title >= 1300)
+
+word.Correlations <- book.Words %>%
+  semi_join(book.Words.mentioned, by = "word") %>%
+  pairwise_cor(item = word, feature = book_long_title) %>%
+  filter(correlation >= .2)
+
+```
+
+```{r}
+set.seed(421)
+graph_from_data_frame(
+  d = word.Correlations, 
+  vertices = book.Words.mentioned %>%
+    semi_join(word.Correlations, by = c("word" = "item1"))
+) %>%
+  ggraph(layout = "fr") +
+  geom_edge_link(aes(alpha = correlation), size = 1.7, color = "red") +  # Apply color gradient based on correlation
+  geom_node_point() +
+  geom_node_text(aes(label = name, fontface = "bold"), repel = TRUE) +
+  guides(color = "none") +
+  labs(title = "Word Correlation within the Scriptures", 
+       subtitle = "The bolder the line the stronger the Correlation") +
+  theme(panel.background = element_rect(fill = "gray"))
+```
